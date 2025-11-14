@@ -75,18 +75,30 @@ python downloader.py -c config.yml
 - `https://v.douyin.com/xxxxx/` （短链接）
 - 包含 `sec_uid` 参数的链接
 
-## 如何获取Cookie（可选）
+## 如何获取Cookie（重要！）
 
-有些情况下，不登录可能无法获取视频列表，这时需要提供Cookie：
+**抖音需要登录状态才能获取用户视频列表，因此Cookie是必需的！**
+
+### 快速方法
 
 1. 在浏览器中打开 https://www.douyin.com 并登录
 2. 按 F12 打开开发者工具
 3. 切换到 "Network"（网络）标签
-4. 刷新页面
+4. 刷新页面（F5）
 5. 点击任意请求
 6. 在右侧找到 "Request Headers"（请求标头）
 7. 找到 "Cookie" 字段，复制整个值
 8. 将Cookie值填入配置文件或通过 `--cookie` 参数传入
+
+### 详细图文教程
+
+如果你是第一次获取Cookie，建议查看详细教程：[COOKIE_GUIDE.md](COOKIE_GUIDE.md)
+
+该教程包含：
+- 分步骤截图说明
+- 不同浏览器的操作方法
+- 常见问题解答
+- 安全注意事项
 
 ## 配置文件说明
 
