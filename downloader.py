@@ -83,6 +83,19 @@ class RateLimiter:
 class DouyinDownloader:
     """抖音下载器主类"""
 
+    @staticmethod
+    def show_cookie_help():
+        """显示如何获取Cookie的帮助信息"""
+        console.print("\n[bold yellow]如何获取抖音Cookie：[/bold yellow]")
+        console.print("1. 在浏览器中打开 https://www.douyin.com 并登录")
+        console.print("2. 按 F12 打开开发者工具")
+        console.print("3. 切换到 'Network' (网络) 标签")
+        console.print("4. 刷新页面（F5）")
+        console.print("5. 在请求列表中点击任意请求")
+        console.print("6. 在右侧找到 'Request Headers' (请求标头)")
+        console.print("7. 找到 'Cookie' 字段，复制整个值")
+        console.print("8. 将Cookie值填入 config.yml 或使用 --cookie 参数\n")
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.stats = DownloadStats()
@@ -95,11 +108,21 @@ class DouyinDownloader:
             'Referer': 'https://www.douyin.com/',
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
         }
 
         # 设置Cookie
         if self.config.get('cookie'):
             self.headers['Cookie'] = self.config['cookie']
+            console.print(f"[green]✓ 已设置Cookie，长度: {len(self.config['cookie'])}[/green]")
+        else:
+            console.print(f"[bold red]✗ 警告：未设置Cookie！[/bold red]")
+            console.print(f"[yellow]抖音需要登录状态才能获取用户视频列表[/yellow]")
+            self.show_cookie_help()
 
         self.session.headers.update(self.headers)
 
@@ -109,17 +132,19 @@ class DouyinDownloader:
 
     def extract_user_id(self, url: str) -> Optional[str]:
         """从URL中提取用户ID"""
-        # 匹配 /user/ 后面的用户ID
+        # 匹配 /user/ 后面的用户ID（包含字母、数字、下划线、连字符）
         patterns = [
-            r'/user/(\w+)',
-            r'sec_uid=([^&]+)',
+            r'/user/([\w-]+)',  # 修复：包含连字符
+            r'sec_uid=([\w-]+)',  # 修复：包含连字符
             r'MS4wLjABAAAA[\w-]+',  # sec_uid格式
         ]
 
         for pattern in patterns:
             match = re.search(pattern, url)
             if match:
-                return match.group(1) if '(' in pattern else match.group(0)
+                user_id = match.group(1) if '(' in pattern else match.group(0)
+                console.print(f"[cyan]提取的用户ID: {user_id}[/cyan]")
+                return user_id
 
         return None
 
@@ -172,23 +197,52 @@ class DouyinDownloader:
                 # 抖音用户作品API
                 api_url = "https://www.douyin.com/aweme/v1/web/aweme/post/"
                 params = {
+                    'device_platform': 'webapp',
+                    'aid': '6383',
+                    'channel': 'channel_pc_web',
                     'sec_user_id': user_id,
-                    'count': 20,
                     'max_cursor': max_cursor,
+                    'locate_query': 'false',
+                    'show_live_replay_strategy': '1',
+                    'count': '18',
+                    'publish_video_strategy_type': '2',
+                    'pc_client_type': '1',
+                    'version_code': '170400',
+                    'version_name': '17.4.0',
                 }
 
                 self.rate_limiter.wait_if_needed()
                 response = self.session.get(api_url, params=params, timeout=15)
 
+                console.print(f"[cyan]API请求URL: {response.url[:100]}...[/cyan]")
+                console.print(f"[cyan]响应状态码: {response.status_code}[/cyan]")
+
                 if response.status_code != 200:
                     console.print(f"[red]API请求失败，状态码: {response.status_code}[/red]")
+                    console.print(f"[yellow]响应内容: {response.text[:500]}[/yellow]")
                     break
 
                 data = response.json()
 
+                # 打印响应数据的键，用于调试
+                console.print(f"[cyan]响应数据包含的键: {list(data.keys())}[/cyan]")
+
                 # 检查响应数据
                 if 'aweme_list' not in data:
-                    console.print(f"[yellow]未找到视频列表，可能需要登录或Cookie已过期[/yellow]")
+                    console.print(f"[bold red]✗ 未找到视频列表！[/bold red]")
+
+                    # 检查是否是登录问题
+                    if data.get('status_code') != 0:
+                        console.print(f"[yellow]API错误码: {data.get('status_code')}[/yellow]")
+                        console.print(f"[yellow]错误信息: {data.get('status_msg', '未知错误')}[/yellow]")
+
+                    if not self.config.get('cookie'):
+                        console.print(f"[yellow]原因：未设置Cookie，抖音需要登录才能访问用户视频[/yellow]")
+                        self.show_cookie_help()
+                    else:
+                        console.print(f"[yellow]可能原因：Cookie已过期或无效，请重新获取[/yellow]")
+
+                    console.print(f"\n[dim]API响应: {json.dumps(data, ensure_ascii=False, indent=2)[:1000]}[/dim]")
                     break
 
                 aweme_list = data.get('aweme_list', [])
