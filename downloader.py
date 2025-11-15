@@ -154,6 +154,29 @@ class DouyinDownloader:
             console.print(f"[yellow]解析短链接失败: {e}，使用原URL[/yellow]")
             return short_url
 
+    def get_single_video_info(self, aweme_id: str) -> Optional[Dict]:
+        """获取单个视频的最新信息（用于刷新过期的下载链接）"""
+        try:
+            # 使用备用API获取单个视频信息
+            api_url = f"https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/"
+            params = {
+                'item_ids': aweme_id
+            }
+
+            self.rate_limiter.wait_if_needed()
+            response = self.session.get(api_url, params=params, timeout=15)
+
+            if response.status_code == 200:
+                data = response.json()
+                if 'item_list' in data and len(data['item_list']) > 0:
+                    return data['item_list'][0]
+
+            return None
+
+        except Exception as e:
+            console.print(f"[yellow]获取单个视频信息失败: {e}[/yellow]")
+            return None
+
     def get_user_info(self, user_id: str) -> Optional[Dict]:
         """获取用户信息"""
         try:
@@ -417,10 +440,25 @@ class DouyinDownloader:
 
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 403:
-                    console.print(f"[yellow]⚠ 403错误，视频链接可能已过期或有防盗链: {save_path.name}[/yellow]")
+                    console.print(f"[yellow]⚠ 403错误，视频链接可能已过期: {save_path.name}[/yellow]")
                     if retry < max_retries - 1:
-                        console.print(f"[cyan]尝试重新获取下载链接...[/cyan]")
-                        # 这里可以尝试重新从aweme_info获取下载链接
+                        console.print(f"[cyan]尝试刷新下载链接...[/cyan]")
+
+                        # 从video_info中获取aweme_id
+                        aweme_id = video_info.get('aweme_id')
+                        if aweme_id:
+                            # 重新获取该视频的最新信息
+                            fresh_info = self.get_single_video_info(aweme_id)
+                            if fresh_info:
+                                # 从新信息中获取下载链接
+                                fresh_url = self.get_video_download_url(fresh_info)
+                                if fresh_url and fresh_url != video_url:
+                                    console.print(f"[green]✓ 成功刷新下载链接[/green]")
+                                    video_url = fresh_url  # 更新为新链接
+                                    video_info = fresh_info  # 更新视频信息
+                                    continue  # 使用新链接重试
+
+                        console.print(f"[yellow]无法刷新链接，使用原链接重试[/yellow]")
                         continue
                     else:
                         console.print(f"[red]✗ 下载失败（403）: {save_path.name}[/red]")
