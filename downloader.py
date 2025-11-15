@@ -222,7 +222,24 @@ class DouyinDownloader:
                     console.print(f"[yellow]响应内容: {response.text[:500]}[/yellow]")
                     break
 
-                data = response.json()
+                # 检查响应内容是否为空
+                if not response.text or len(response.text.strip()) == 0:
+                    console.print(f"[yellow]第{page}页响应为空，可能已到达最后一页[/yellow]")
+                    break
+
+                # 尝试解析JSON
+                try:
+                    data = response.json()
+                except json.JSONDecodeError as e:
+                    console.print(f"[red]JSON解析失败: {e}[/red]")
+                    console.print(f"[yellow]响应内容前500字符: {response.text[:500]}[/yellow]")
+                    console.print(f"[yellow]响应内容类型: {response.headers.get('content-type')}[/yellow]")
+                    # 如果是第一页就失败，退出；否则可能是已到末尾
+                    if page == 1:
+                        break
+                    else:
+                        console.print(f"[cyan]已获取{page-1}页，可能已到达最后一页[/cyan]")
+                        break
 
                 # 打印响应数据的键，用于调试
                 console.print(f"[cyan]响应数据包含的键: {list(data.keys())}[/cyan]")
@@ -265,11 +282,21 @@ class DouyinDownloader:
                     break
 
                 page += 1
-                time.sleep(0.5)  # 避免请求过快
+                # 增加延迟，避免请求过快被限流
+                time.sleep(1.0)  # 从0.5秒增加到1秒
 
             except Exception as e:
                 console.print(f"[red]获取视频列表异常: {e}[/red]")
-                break
+                import traceback
+                console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+                # 如果是第一页就失败，退出；否则继续
+                if page == 1:
+                    console.print(f"[red]第一页获取失败，无法继续[/red]")
+                    break
+                else:
+                    console.print(f"[yellow]已成功获取{page-1}页，继续返回已获取的视频[/yellow]")
+                    break
 
         console.print(f"[green]共获取到 {len(videos)} 个视频[/green]")
         return videos
@@ -313,50 +340,99 @@ class DouyinDownloader:
 
         return filename.strip()
 
-    def download_video(self, video_url: str, save_path: Path, video_info: Dict) -> bool:
-        """下载单个视频"""
-        try:
-            # 检查文件是否已存在
-            if save_path.exists():
-                console.print(f"[yellow]文件已存在，跳过: {save_path.name}[/yellow]")
-                self.stats.add_skipped()
-                return True
-
-            # 下载视频
-            self.rate_limiter.wait_if_needed()
-            response = self.session.get(video_url, stream=True, timeout=30)
-            response.raise_for_status()
-
-            # 获取文件大小
-            total_size = int(response.headers.get('content-length', 0))
-
-            # 保存视频
-            with open(save_path, 'wb') as f:
-                if total_size == 0:
-                    f.write(response.content)
-                else:
-                    downloaded = 0
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
-
-            # 保存视频信息
-            info_path = save_path.with_suffix('.json')
-            with open(info_path, 'w', encoding='utf-8') as f:
-                json.dump(video_info, f, ensure_ascii=False, indent=2)
-
-            console.print(f"[green]✓ 下载成功: {save_path.name}[/green]")
-            self.stats.add_success()
+    def download_video(self, video_url: str, save_path: Path, video_info: Dict, max_retries: int = 3) -> bool:
+        """下载单个视频（带重试机制）"""
+        # 检查文件是否已存在
+        if save_path.exists():
+            console.print(f"[yellow]文件已存在，跳过: {save_path.name}[/yellow]")
+            self.stats.add_skipped()
             return True
 
-        except Exception as e:
-            console.print(f"[red]✗ 下载失败: {save_path.name} - {e}[/red]")
-            self.stats.add_failed()
-            # 删除未完成的文件
-            if save_path.exists():
-                save_path.unlink()
-            return False
+        # 重试循环
+        for retry in range(max_retries):
+            try:
+                if retry > 0:
+                    wait_time = retry * 2  # 递增等待时间：2秒、4秒
+                    console.print(f"[yellow]等待{wait_time}秒后重试... (第{retry+1}/{max_retries}次)[/yellow]")
+                    time.sleep(wait_time)
+
+                # 下载视频
+                self.rate_limiter.wait_if_needed()
+
+                # 为视频下载添加Referer，避免403
+                headers = {
+                    'Referer': 'https://www.douyin.com/',
+                    'User-Agent': self.headers['User-Agent']
+                }
+
+                response = self.session.get(video_url, stream=True, timeout=60, headers=headers)
+                response.raise_for_status()
+
+                # 获取文件大小
+                total_size = int(response.headers.get('content-length', 0))
+
+                # 保存视频
+                temp_path = save_path.with_suffix('.tmp')  # 使用临时文件
+                with open(temp_path, 'wb') as f:
+                    if total_size == 0:
+                        f.write(response.content)
+                    else:
+                        downloaded = 0
+                        chunk_size = 1024 * 1024  # 1MB chunks，更大的块提高速度
+                        for chunk in response.iter_content(chunk_size=chunk_size):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+
+                # 下载完成，重命名临时文件
+                temp_path.rename(save_path)
+
+                # 保存视频信息
+                info_path = save_path.with_suffix('.json')
+                with open(info_path, 'w', encoding='utf-8') as f:
+                    json.dump(video_info, f, ensure_ascii=False, indent=2)
+
+                console.print(f"[green]✓ 下载成功: {save_path.name}[/green]")
+                self.stats.add_success()
+                return True
+
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 403:
+                    console.print(f"[yellow]⚠ 403错误，视频链接可能已过期或有防盗链: {save_path.name}[/yellow]")
+                    if retry < max_retries - 1:
+                        console.print(f"[cyan]尝试重新获取下载链接...[/cyan]")
+                        # 这里可以尝试重新从aweme_info获取下载链接
+                        continue
+                    else:
+                        console.print(f"[red]✗ 下载失败（403）: {save_path.name}[/red]")
+                else:
+                    console.print(f"[red]HTTP错误 {e.response.status_code}: {save_path.name}[/red]")
+                    if retry < max_retries - 1:
+                        continue
+
+            except (requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout,
+                    requests.exceptions.ChunkedEncodingError) as e:
+                console.print(f"[yellow]⚠ 网络错误: {type(e).__name__} - {save_path.name}[/yellow]")
+                if retry < max_retries - 1:
+                    continue
+                else:
+                    console.print(f"[red]✗ 下载失败（网络错误）: {save_path.name}[/red]")
+
+            except Exception as e:
+                console.print(f"[red]✗ 下载失败: {save_path.name} - {e}[/red]")
+                if retry < max_retries - 1:
+                    continue
+
+            finally:
+                # 清理临时文件
+                temp_path = save_path.with_suffix('.tmp')
+                if temp_path.exists():
+                    temp_path.unlink()
+
+        # 所有重试都失败
+        self.stats.add_failed()
+        return False
 
     def download_user_videos(self, url: str):
         """下载用户主页的所有视频"""
