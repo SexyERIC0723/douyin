@@ -103,16 +103,12 @@ class DouyinDownloader:
         self.session = requests.Session()
 
         # 设置请求头
+        # 注意：不要手动设置Accept-Encoding，让requests自动处理gzip解压
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Referer': 'https://www.douyin.com/',
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Sec-Fetch-Dest': 'empty',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'same-origin',
         }
 
         # 设置Cookie
@@ -214,8 +210,12 @@ class DouyinDownloader:
                 self.rate_limiter.wait_if_needed()
                 response = self.session.get(api_url, params=params, timeout=15)
 
-                console.print(f"[cyan]API请求URL: {response.url[:100]}...[/cyan]")
-                console.print(f"[cyan]响应状态码: {response.status_code}[/cyan]")
+                if page <= 2:  # 只在前两页显示详细调试信息
+                    console.print(f"[cyan]API请求URL: {response.url[:100]}...[/cyan]")
+                    console.print(f"[cyan]响应状态码: {response.status_code}[/cyan]")
+                    console.print(f"[cyan]Content-Encoding: {response.headers.get('content-encoding', 'none')}[/cyan]")
+                    console.print(f"[cyan]Content-Type: {response.headers.get('content-type')}[/cyan]")
+                    console.print(f"[cyan]响应内容长度: {len(response.content)} bytes[/cyan]")
 
                 if response.status_code != 200:
                     console.print(f"[red]API请求失败，状态码: {response.status_code}[/red]")
@@ -223,7 +223,7 @@ class DouyinDownloader:
                     break
 
                 # 检查响应内容是否为空
-                if not response.text or len(response.text.strip()) == 0:
+                if not response.content or len(response.content) == 0:
                     console.print(f"[yellow]第{page}页响应为空，可能已到达最后一页[/yellow]")
                     break
 
@@ -232,14 +232,33 @@ class DouyinDownloader:
                     data = response.json()
                 except json.JSONDecodeError as e:
                     console.print(f"[red]JSON解析失败: {e}[/red]")
-                    console.print(f"[yellow]响应内容前500字符: {response.text[:500]}[/yellow]")
-                    console.print(f"[yellow]响应内容类型: {response.headers.get('content-type')}[/yellow]")
-                    # 如果是第一页就失败，退出；否则可能是已到末尾
-                    if page == 1:
-                        break
+
+                    # 检查是否是gzip压缩但未解压的问题
+                    content_encoding = response.headers.get('content-encoding', '')
+                    if content_encoding or response.content[:2] == b'\x1f\x8b':  # gzip magic number
+                        console.print(f"[yellow]检测到压缩数据，尝试手动解压...[/yellow]")
+                        try:
+                            import gzip
+                            decompressed = gzip.decompress(response.content)
+                            data = json.loads(decompressed.decode('utf-8'))
+                            console.print(f"[green]手动解压成功！[/green]")
+                        except Exception as decompress_error:
+                            console.print(f"[red]手动解压也失败: {decompress_error}[/red]")
+                            console.print(f"[yellow]响应内容前100字节(hex): {response.content[:100].hex()}[/yellow]")
+                            if page == 1:
+                                break
+                            else:
+                                console.print(f"[cyan]已获取{page-1}页，可能已到达最后一页[/cyan]")
+                                break
                     else:
-                        console.print(f"[cyan]已获取{page-1}页，可能已到达最后一页[/cyan]")
-                        break
+                        console.print(f"[yellow]响应内容前500字符: {response.text[:500]}[/yellow]")
+                        console.print(f"[yellow]响应内容类型: {response.headers.get('content-type')}[/yellow]")
+                        # 如果是第一页就失败，退出；否则可能是已到末尾
+                        if page == 1:
+                            break
+                        else:
+                            console.print(f"[cyan]已获取{page-1}页，可能已到达最后一页[/cyan]")
+                            break
 
                 # 打印响应数据的键，用于调试
                 console.print(f"[cyan]响应数据包含的键: {list(data.keys())}[/cyan]")
