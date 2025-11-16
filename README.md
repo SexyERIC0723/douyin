@@ -33,16 +33,19 @@ pip install requests pyyaml rich python-dateutil
 ### 方式一：命令行参数（推荐）
 
 ```bash
-# 基本用法 - 下载用户所有视频
+# 基本用法 - 下载用户所有视频（默认从最老的视频开始）
 python downloader.py -u "https://www.douyin.com/user/MS4wLjABAAAA..."
 
 # 指定保存路径
 python downloader.py -u "https://www.douyin.com/user/MS4wLjABAAAA..." -p "./我的下载"
 
-# 限制下载数量（只下载最新的50个视频）
+# 限制下载数量（只下载最老的50个视频）
 python downloader.py -u "https://www.douyin.com/user/MS4wLjABAAAA..." --max-count 50
 
-# 使用Cookie（某些情况下需要）
+# 从最新的视频开始下载（而不是默认的最老开始）
+python downloader.py -u "https://www.douyin.com/user/MS4wLjABAAAA..." --newest-first
+
+# 使用Cookie（必需的）
 python downloader.py -u "https://www.douyin.com/user/MS4wLjABAAAA..." --cookie "你的Cookie"
 ```
 
@@ -116,7 +119,12 @@ path: "./Downloaded"
 # 最大下载数量（0表示不限制）
 max_count: 0
 
-# Cookie（可选）
+# 视频下载顺序
+# true: 从最老的视频开始下载（推荐，按时间顺序）
+# false: 从最新的视频开始下载
+oldest_first: true
+
+# Cookie（必需）
 cookie: "你的Cookie值"
 ```
 
@@ -129,18 +137,25 @@ cookie: "你的Cookie值"
 | `-p, --path` | 下载保存路径 | `-p "./我的下载"` |
 | `--cookie` | 抖音Cookie | `--cookie "msToken=..."` |
 | `--max-count` | 最大下载数量 | `--max-count 50` |
+| `--oldest-first` | 从最老的视频开始下载（默认） | `--oldest-first` |
+| `--newest-first` | 从最新的视频开始下载 | `--newest-first` |
 
 ## 下载目录结构
 
 ```
 Downloaded/
 └── MS4wLjABAAAA.../          # 用户ID文件夹
-    ├── 1_视频ID_视频标题.mp4   # 视频文件
+    ├── 1_视频ID_视频标题.mp4   # 第1个视频（默认为最老的视频）
     ├── 1_视频ID_视频标题.json  # 视频元数据
-    ├── 2_视频ID_视频标题.mp4
+    ├── 2_视频ID_视频标题.mp4   # 第2个视频
     ├── 2_视频ID_视频标题.json
     └── ...
+    └── 231_视频ID_视频标题.mp4 # 最后一个视频（最新的）
 ```
+
+**文件编号规则**：
+- 默认（`oldest_first: true`）：1号=最老视频，231号=最新视频（按时间顺序）
+- 如设置 `oldest_first: false`：1号=最新视频，231号=最老视频（倒序）
 
 ## 注意事项
 
@@ -265,12 +280,17 @@ MIT License
   - 自动检测403错误并刷新下载链接
   - 添加 `get_single_video_info()` 方法获取最新视频信息
   - 大幅提高大批量下载的成功率
+- 🎯 **视频下载顺序控制**：支持从最老或最新视频开始
+  - 新增 `oldest_first` 配置选项（默认true，从最老开始）
+  - 新增 `--oldest-first` 和 `--newest-first` 命令行参数
+  - 方便按时间顺序整理视频
 - ✅ **优化错误提示**：区分链接过期和防盗链的403错误
 - ✅ **完善文档**：添加链接时效性问题的详细说明
 
 **解决的问题**：
 - 前期视频正常，后期大量403错误
 - 下载200+视频时链接过期导致失败率高
+- 默认从新到旧的顺序不符合按时间整理的需求
 
 ### V2.1 (2024-11-15)
 - ✅ **修复用户ID提取bug**：支持包含连字符的sec_uid

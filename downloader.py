@@ -521,6 +521,14 @@ class DouyinDownloader:
             console.print("[yellow]未获取到任何视频[/yellow]")
             return
 
+        # 反转视频列表：从最老的视频开始下载（默认API返回的是从新到旧）
+        oldest_first = self.config.get('oldest_first', True)  # 默认从最老开始
+        if oldest_first:
+            videos.reverse()
+            console.print(f"[cyan]已反转视频顺序，将从最老的视频开始下载[/cyan]")
+        else:
+            console.print(f"[cyan]保持原始顺序，将从最新的视频开始下载[/cyan]")
+
         self.stats.total = len(videos)
 
         # 下载视频
@@ -584,17 +592,25 @@ def load_config(config_path: Optional[str] = None) -> Dict:
         'path': './Downloaded',
         'max_count': 0,  # 0表示不限制
         'cookie': '',
+        'oldest_first': True,  # 默认从最老的视频开始下载
     }
 
 
 def main():
     """主函数"""
-    parser = argparse.ArgumentParser(description='抖音视频下载器 V2.0')
+    parser = argparse.ArgumentParser(description='抖音视频下载器 V2.2')
     parser.add_argument('-u', '--url', type=str, help='用户主页链接')
     parser.add_argument('-c', '--config', type=str, help='配置文件路径')
     parser.add_argument('-p', '--path', type=str, help='下载保存路径')
     parser.add_argument('--cookie', type=str, help='抖音Cookie')
     parser.add_argument('--max-count', type=int, help='最大下载数量（0为不限制）')
+
+    # 视频下载顺序选项
+    order_group = parser.add_mutually_exclusive_group()
+    order_group.add_argument('--oldest-first', action='store_true',
+                            help='从最老的视频开始下载（默认）')
+    order_group.add_argument('--newest-first', action='store_true',
+                            help='从最新的视频开始下载')
 
     args = parser.parse_args()
 
@@ -608,6 +624,12 @@ def main():
         config['cookie'] = args.cookie
     if args.max_count is not None:
         config['max_count'] = args.max_count
+
+    # 处理视频下载顺序
+    if args.oldest_first:
+        config['oldest_first'] = True
+    elif args.newest_first:
+        config['oldest_first'] = False
 
     # 获取URL
     url = args.url
