@@ -1,0 +1,73 @@
+# 抖音视频下载+YouTube上传 集成配置文件
+
+# ===== 抖音下载配置 =====
+
+# 用户主页链接
+url: ""
+
+# 临时下载路径（视频上传后会自动删除）
+temp_path: "./temp_download"
+
+# 最大下载数量（0 表示不限制，处理所有视频）
+max_count: 0
+
+# 视频处理顺序
+# true: 从最老的视频开始处理（推荐，按时间顺序）
+# false: 从最新的视频开始处理
+oldest_first: true
+
+# Cookie（重要！必需的，用于获取视频列表）
+# 获取方式：
+# 1. 在浏览器中打开 https://www.douyin.com 并登录
+# 2. 按 F12 打开开发者工具
+# 3. 切换到 Network 标签
+# 4. 刷新页面（F5）
+# 5. 找到任意请求，在 Request Headers 中找到 Cookie
+# 6. 复制整个 Cookie 值到下面
+# 详细教程：查看 COOKIE_GUIDE.md
+cookie: ""
+
+# ===== YouTube 上传配置 =====
+
+# YouTube 客户端密钥文件路径
+# 从 Google Cloud Console 下载的 OAuth 2.0 客户端密钥
+client_secrets_file: "client_secrets.json"
+
+# 上传间隔（秒）
+# 为避免触发 YouTube API 限制，建议设置适当间隔
+# 0 表示不等待，立即处理下一个视频
+upload_interval_seconds: 5
+
+# 已上传视频记录文件
+# 用于防止重复上传（记录 aweme_id）
+uploaded_videos_log: "uploaded_videos.json"
+
+# ===== YouTube 视频设置 =====
+
+# 视频隐私设置
+# public: 公开
+# private: 私密
+# unlisted: 不公开列出
+privacy_status: "public"
+
+# 是否标记为"儿童内容"
+# true: 是儿童内容
+# false: 不是儿童内容
+made_for_kids: true
+
+# 视频分类 ID
+# 22 = 人物和博客
+# 24 = 娱乐
+# 完整列表：https://developers.google.com/youtube/v3/docs/videoCategories/list
+category_id: "24"
+
+# 视频标题模板
+# 可用变量：
+#   {desc} - 抖音视频描述
+#   {index} - 视频序号
+#   {aweme_id} - 抖音视频ID
+# title_template: "{index}. {desc}"
+
+# 视频描述模板
+# 可用变量同上
+# description_template: "原视频来自抖音\nID: {aweme_id}"

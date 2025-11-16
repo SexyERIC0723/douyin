@@ -1,9 +1,10 @@
-# 抖音视频下载器 V2.0
+# 抖音视频下载器 V2.3
 
-一个功能强大的抖音视频批量下载工具，支持下载用户主页的所有视频。
+一个功能强大的抖音视频批量下载工具，支持下载用户主页的所有视频，并可自动上传到YouTube。
 
 ## 功能特性
 
+### 下载功能
 - ✅ 批量下载用户主页视频
 - ✅ 自动解析短链接
 - ✅ 无水印视频下载
@@ -16,7 +17,17 @@
 - ✅ 保存视频元数据信息
 - ✅ 支持配置文件和命令行参数
 
+### YouTube集成功能（V2.3新增）
+- ✅ **自动上传到YouTube**：下载后立即上传，无需手动操作
+- ✅ **智能去重**：自动记录已上传视频，避免重复上传
+- ✅ **节省空间**：上传完成后自动删除本地文件
+- ✅ **按时间顺序处理**：从最老视频开始，保持视频发布顺序
+- ✅ **可配置上传间隔**：避免触发YouTube API限制
+- ✅ **完整的YouTube设置**：支持隐私、分类、儿童内容等所有选项
+
 ## 安装依赖
+
+### 基础下载功能
 
 ```bash
 pip install -r requirements.txt
@@ -26,6 +37,14 @@ pip install -r requirements.txt
 
 ```bash
 pip install requests pyyaml rich python-dateutil
+```
+
+### YouTube集成功能（可选）
+
+如果需要使用YouTube自动上传功能，还需安装：
+
+```bash
+pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
 ```
 
 ## 快速开始
@@ -57,6 +76,116 @@ python downloader.py -u "https://www.douyin.com/user/MS4wLjABAAAA..." --cookie "
 ```bash
 python downloader.py -c config.yml
 ```
+
+## YouTube集成模式（V2.3新增）
+
+### 功能说明
+
+`downloader_uploader.py` 是一个集成脚本，可以自动完成：下载视频 → 上传YouTube → 删除本地文件 的完整流程。
+
+**特点**：
+- 📥 下载一个视频 → 📤 立即上传YouTube → 🗑️ 删除本地文件 → 继续下一个
+- 💾 节省磁盘空间：不会堆积大量本地视频文件
+- 🔄 防止重复上传：自动记录已上传的视频ID
+- ⏱️ 智能速率控制：可配置上传间隔，避免API限制
+- 📊 按时间顺序处理：从最老的视频开始上传
+
+### 前置准备
+
+#### 1. 获取YouTube API凭证
+
+1. 访问 [Google Cloud Console](https://console.cloud.google.com/)
+2. 创建新项目或选择现有项目
+3. 启用 "YouTube Data API v3"
+4. 创建 OAuth 2.0 客户端ID
+5. 下载客户端密钥JSON文件，重命名为 `client_secrets.json`
+6. 将文件放在项目根目录
+
+#### 2. 配置文件设置
+
+编辑 `config_uploader.yml` 文件：
+
+```yaml
+# 抖音用户链接
+url: "https://www.douyin.com/user/MS4wLjABAAAA..."
+
+# 临时下载路径
+temp_path: "./temp_download"
+
+# Cookie（必需）
+cookie: "你的抖音Cookie"
+
+# YouTube客户端密钥文件
+client_secrets_file: "client_secrets.json"
+
+# 上传间隔（秒）- 建议5-10秒
+upload_interval_seconds: 5
+
+# 视频设置
+privacy_status: "public"  # public/private/unlisted
+made_for_kids: true       # 是否为儿童内容
+category_id: "24"         # 24=娱乐
+```
+
+### 使用方法
+
+```bash
+# 使用配置文件运行（推荐）
+python downloader_uploader.py -c config_uploader.yml
+
+# 命令行参数方式
+python downloader_uploader.py \
+  -u "https://www.douyin.com/user/MS4wLjABAAAA..." \
+  --cookie "你的Cookie" \
+  --client-secrets client_secrets.json \
+  --upload-interval 5
+```
+
+### 运行流程
+
+1. **首次运行**：会打开浏览器要求授权YouTube访问权限
+2. **授权完成**：开始处理视频
+3. **处理过程**：
+   - 获取用户所有视频列表（按时间从老到新）
+   - 逐个处理：下载 → 上传 → 记录 → 删除
+   - 显示实时进度和统计信息
+4. **自动去重**：已上传的视频会跳过（根据`uploaded_videos.json`）
+5. **断点续传**：中断后重新运行会继续未完成的视频
+
+### 目录结构
+
+```
+项目根目录/
+├── downloader_uploader.py      # 集成上传脚本
+├── config_uploader.yml         # 上传配置文件
+├── client_secrets.json         # YouTube API密钥
+├── uploaded_videos.json        # 已上传视频记录（自动生成）
+├── temp_download/              # 临时下载目录（自动清理）
+└── token.pickle                # YouTube认证令牌（自动生成）
+```
+
+### 注意事项
+
+1. **API配额限制**：
+   - YouTube API每日有配额限制（默认10,000单位）
+   - 每次上传消耗约1,600单位
+   - 建议设置 `upload_interval_seconds: 5-10` 避免过快
+   - 每日可上传约6个视频（根据配额）
+
+2. **网络稳定性**：
+   - 上传大文件需要稳定网络
+   - 建议在网络条件好时运行
+   - 上传失败会自动重试
+
+3. **视频内容审核**：
+   - YouTube会自动审核上传的视频
+   - 违规内容可能导致频道被限制
+   - 请确保上传内容符合YouTube社区准则
+
+4. **儿童内容设置**：
+   - `made_for_kids: true` 表示视频为儿童内容
+   - 儿童视频会有功能限制（无评论、无推荐等）
+   - 请根据实际内容正确设置
 
 ## 获取用户主页链接
 
@@ -274,6 +403,22 @@ Downloaded/
 MIT License
 
 ## 更新日志
+
+### V2.3 (2024-11-16)
+- 🎉 **YouTube自动上传集成**：全新的 `downloader_uploader.py` 脚本
+  - 下载 → 上传 → 删除 全自动流程
+  - 节省磁盘空间，无需手动管理本地文件
+  - 智能去重，自动记录已上传视频
+  - 可配置上传间隔，避免API限制
+- ✅ **完整的YouTube设置**：支持隐私、分类、儿童内容等选项
+- ✅ **新增配置文件**：`config_uploader.yml` 专用于集成模式
+- ✅ **详细文档**：添加YouTube API设置和使用说明
+- ✅ **OAuth认证**：支持Google账号授权，安全可靠
+
+**新增功能**：
+- 一键完成抖音视频搬运到YouTube
+- 按时间顺序自动上传，保持视频发布顺序
+- 断点续传，中断后继续未完成的视频
 
 ### V2.2 (2024-11-15)
 - 🔥 **智能链接刷新**：解决大量视频下载时链接过期问题

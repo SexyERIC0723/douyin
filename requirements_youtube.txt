@@ -1,0 +1,11 @@
+# YouTube API依赖
+# 如果需要使用 downloader_uploader.py 自动上传到YouTube，请安装这些依赖
+
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.100.0
+
+# 说明：
+# pip install -r requirements.txt              # 安装基础下载功能
+# pip install -r requirements_youtube.txt      # 额外安装YouTube上传功能
