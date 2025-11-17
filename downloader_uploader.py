@@ -238,13 +238,47 @@ class DouyinYouTubeUploader:
             self.rate_limiter.wait_if_needed()
             response = self.session.get(api_url, params=params, timeout=15)
 
-            if response.status_code == 200:
+            # 检查响应状态
+            if response.status_code != 200:
+                console.print(f"[yellow]⚠️  API返回错误状态码: {response.status_code}[/yellow]")
+                if response.status_code in [401, 403]:
+                    console.print(f"[red]❌ Cookie可能已过期，请更新Cookie后重试！[/red]")
+                return None
+
+            # 检查响应内容是否为空
+            if not response.text or len(response.text.strip()) == 0:
+                console.print(f"[yellow]⚠️  API返回空响应，Cookie可能已过期[/yellow]")
+                return None
+
+            # 尝试解析JSON
+            try:
                 data = response.json()
-                if 'item_list' in data and len(data['item_list']) > 0:
-                    return data['item_list'][0]
+            except json.JSONDecodeError as je:
+                console.print(f"[yellow]⚠️  JSON解析失败: {je}[/yellow]")
+                console.print(f"[dim]响应内容前100字符: {response.text[:100]}[/dim]")
+                if "登录" in response.text or "login" in response.text.lower():
+                    console.print(f"[red]❌ 检测到需要登录，Cookie已过期！[/red]")
+                return None
+
+            # 检查返回数据
+            if 'item_list' in data and len(data['item_list']) > 0:
+                return data['item_list'][0]
+            else:
+                console.print(f"[yellow]⚠️  API返回数据中没有视频信息[/yellow]")
+                if 'status_code' in data and data['status_code'] != 0:
+                    console.print(f"[yellow]   API状态码: {data.get('status_code')}, 消息: {data.get('status_msg', 'N/A')}[/yellow]")
+            return None
+
+        except requests.exceptions.Timeout:
+            console.print(f"[yellow]⏱️  请求超时，请检查网络连接[/yellow]")
+            return None
+        except requests.exceptions.RequestException as re:
+            console.print(f"[yellow]⚠️  网络请求失败: {re}[/yellow]")
             return None
         except Exception as e:
-            console.print(f"[yellow]获取视频信息失败: {e}[/yellow]")
+            console.print(f"[yellow]⚠️  获取视频信息失败: {e}[/yellow]")
+            import traceback
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
             return None
 
     def get_user_videos(self, user_id: str, max_count: int = 0) -> List[Dict]:
@@ -374,10 +408,21 @@ class DouyinYouTubeUploader:
                 try:
                     if retry > 0:
                         # 刷新链接
+                        console.print(f"[yellow]🔄 尝试刷新下载链接 (第{retry}次重试)...[/yellow]")
                         fresh_info = self.get_single_video_info(aweme_id)
                         if fresh_info:
-                            download_url = self.get_video_download_url(fresh_info)
-                            video_info = fresh_info
+                            fresh_url = self.get_video_download_url(fresh_info)
+                            if fresh_url:
+                                download_url = fresh_url
+                                video_info = fresh_info
+                                console.print(f"[green]✅ 链接刷新成功[/green]")
+                            else:
+                                console.print(f"[red]❌ 无法获取新的下载链接[/red]")
+                                break
+                        else:
+                            console.print(f"[red]❌ 无法刷新视频信息，可能Cookie已过期[/red]")
+                            console.print(f"[yellow]💡 建议: 停止当前任务，更新Cookie后重新运行[/yellow]")
+                            break
 
                     self.rate_limiter.wait_if_needed()
                     response = self.session.get(download_url, stream=True, timeout=60, headers=headers)
@@ -404,13 +449,17 @@ class DouyinYouTubeUploader:
 
                 except requests.exceptions.HTTPError as e:
                     if e.response.status_code == 403 and retry < max_retries - 1:
-                        console.print(f"[yellow]403错误，尝试刷新链接...[/yellow]")
+                        console.print(f"[yellow]⚠️  403错误: 链接已过期或被拒绝[/yellow]")
                         time.sleep(2)
                         continue
+                    elif e.response.status_code == 403:
+                        console.print(f"[red]❌ 403错误: 重试{max_retries}次后仍然失败[/red]")
+                        raise
                     else:
                         raise
                 except Exception as e:
                     if retry < max_retries - 1:
+                        console.print(f"[yellow]⚠️  下载出错: {e}, 将重试...[/yellow]")
                         time.sleep(2)
                         continue
                     else:
@@ -423,9 +472,44 @@ class DouyinYouTubeUploader:
             self.stats.add_failed()
             return None
 
+    def verify_cookie(self) -> bool:
+        """验证Cookie是否有效"""
+        console.print("[cyan]🔍 正在验证Cookie有效性...[/cyan]")
+        try:
+            # 尝试访问一个简单的API接口
+            test_url = "https://www.douyin.com/aweme/v1/web/aweme/post/"
+            params = {
+                'device_platform': 'webapp',
+                'aid': '6383',
+                'count': '1',
+            }
+            response = self.session.get(test_url, params=params, timeout=10)
+
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    # 如果能成功解析JSON，说明Cookie基本有效
+                    console.print("[green]✅ Cookie验证通过[/green]")
+                    return True
+                except:
+                    pass
+
+            console.print("[red]❌ Cookie验证失败，请更新Cookie！[/red]")
+            console.print("[yellow]💡 提示: 请参考 COOKIE_GUIDE.md 重新获取Cookie[/yellow]")
+            return False
+
+        except Exception as e:
+            console.print(f"[yellow]⚠️  Cookie验证时出错: {e}[/yellow]")
+            return False
+
     def process_user_videos(self, url: str):
         """处理用户视频：下载 → 上传 → 删除"""
         console.print(f"[bold cyan]开始处理用户主页: {url}[/bold cyan]")
+
+        # 验证Cookie
+        if not self.verify_cookie():
+            console.print("[red]❌ 请更新Cookie后重试[/red]")
+            return
 
         # 提取用户ID
         user_id = self.extract_user_id(url)
